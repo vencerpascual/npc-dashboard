@@ -130,7 +130,7 @@ body {
   font-size: 14px; line-height: 1.5; -webkit-font-smoothing: antialiased;
 }
 .ui[hidden] { display: none !important; }
-#uiMobile { font-size: 15px; }
+#uiMobile { font-size: 15px; overflow-x: hidden; }
 
 /* the incoming layout fades in, so switching views is a dissolve */
 .ui { animation: uiFade .3s ease both; }
@@ -414,6 +414,7 @@ html.ui-desktop { scroll-behavior: smooth; }
   padding: 12px 18px;
   margin-bottom: 16px;
   background: var(--glass);
+  -webkit-backdrop-filter: blur(10px);
   backdrop-filter: blur(10px);
   border: 1px solid var(--rule);
   border-radius: var(--r-lg);
@@ -689,13 +690,15 @@ html.ui-desktop { scroll-behavior: smooth; }
 /* ══════════════════════════════════════════════════════════════
    MOBILE LAYOUT  (scoped to #uiMobile)
 ══════════════════════════════════════════════════════════════ */
-#uiMobile .app { display:flex; flex-direction:column; height:100dvh; max-width:640px; margin:0 auto;
-      background:var(--plane); position:relative; }
+#uiMobile .app { display:flex; flex-direction:column; max-width:640px; margin:0 auto;
+      background:var(--plane); position:relative;
+      
+      height:100vh; height:100dvh; height:var(--appvh, 100dvh); }
 #uiMobile .appbar {
   flex:none; z-index:12;
   display:flex; align-items:center; gap:12px;
   padding:calc(env(safe-area-inset-top) + 12px) 16px 12px;
-  background:var(--bar); backdrop-filter:blur(12px);
+  background:var(--bar); -webkit-backdrop-filter:blur(12px); backdrop-filter:blur(12px);
   border-bottom:1px solid var(--rule);
   transition:box-shadow .25s ease;
 }
@@ -740,7 +743,7 @@ html.ui-desktop { scroll-behavior: smooth; }
   position:fixed; left:0; right:0; bottom:0; z-index:14;
   max-width:640px; margin:0 auto;
   display:grid; grid-template-columns:repeat(4,1fr);
-  background:var(--bar); backdrop-filter:blur(12px);
+  background:var(--bar); -webkit-backdrop-filter:blur(12px); backdrop-filter:blur(12px);
   border-top:1px solid var(--rule); box-shadow:var(--shadow);
   padding-bottom:env(safe-area-inset-bottom);
 }
@@ -923,7 +926,7 @@ html.ui-desktop { scroll-behavior: smooth; }
   background:var(--surface); border-top:1px solid var(--rule);
   border-radius:20px 20px 0 0;
   padding:8px 16px calc(env(safe-area-inset-bottom) + 20px);
-  max-height:88dvh; overflow-y:auto; -webkit-overflow-scrolling:touch;
+  max-height:88vh; max-height:88dvh; overflow-y:auto; -webkit-overflow-scrolling:touch;
   transform:translateY(101%); transition:transform .3s var(--ease);
   box-shadow:0 -8px 30px rgba(0,0,0,.18);
 }
@@ -1385,7 +1388,7 @@ html.ui-desktop { scroll-behavior: smooth; }
 ══════════════════════════════════════════════════════════════ */
 window.NPC = {
 
-  API_URL: 'https://script.google.com/macros/s/AKfycbxzPk4ABRFNl5BJd6idwqZdhS-PhGnucvtTRMjo27n1k0DbsqiH8iyZ4344AEIEyoCD/exec',
+  API_URL: 'https://script.google.com/macros/s/AKfycby3TkHOmaFB9xJKUnSwRQHxnG_BK6LFfvCMRKW3Bau6FSiPlycbSn65kFpCFlGKdSi2/exec',
 
   /* filled in only when Apps Script serves this file (it is a template);
      stays literal on a static host, which is how we tell them apart */
@@ -3079,11 +3082,34 @@ const EMBEDDED = NPC.snapshot;
 (function () {
   var MQ = window.matchMedia('(max-width: 700px)');
   var current = null;
+  var FRAMED = (function () { try { return window.self !== window.top; } catch (e) { return true; } })();
+
+  /* A phone is normally caught by the width query. Inside an iframe — which is
+     how Apps Script serves the page — the layout viewport can report ~980px
+     even on a handset, so fall back to the physical screen and touch input. */
+  function isPhone() {
+    if (MQ.matches) return true;
+    try {
+      var coarse = window.matchMedia('(pointer: coarse)').matches;
+      var shortest = Math.min(screen.width || 9999, screen.height || 9999);
+      return coarse && shortest <= 520;
+    } catch (e) { return false; }
+  }
+
+  /* In a frame, 100dvh is the frame's height; measure it instead. A frame
+     whose host page has no viewport meta reports a height far taller than the
+     handset, so cap it with the physical screen. */
+  function setFrameHeight() {
+    if (!FRAMED) return;
+    var h = window.innerHeight;
+    if (screen && screen.height) h = Math.min(h, screen.height);
+    document.documentElement.style.setProperty('--appvh', h + 'px');
+  }
 
   function wanted() {
     var v = window.NPC.view;
     if (v === 'desktop' || v === 'mobile') return v;
-    return MQ.matches ? 'mobile' : 'desktop';
+    return isPhone() ? 'mobile' : 'desktop';
   }
 
   var PRINT = window.matchMedia('print');
@@ -3092,6 +3118,7 @@ const EMBEDDED = NPC.snapshot;
     /* never swap layout mid-print: the paper is wider than the phone, which
        would otherwise hand the printer a view that has not rendered yet */
     if (PRINT.matches) return;
+    setFrameHeight();
     var v = wanted();
     var ui = v === 'mobile' ? window.MobileUI : window.DesktopUI;
     if (!ui) return;
@@ -3113,6 +3140,10 @@ const EMBEDDED = NPC.snapshot;
   }
 
   window.NPC.route = mount;
+
+  setFrameHeight();
+  addEventListener('resize', function () { setFrameHeight(); mount(); }, { passive: true });
+  addEventListener('orientationchange', function () { setTimeout(function () { setFrameHeight(); mount(); }, 120); });
 
   if (MQ.addEventListener) MQ.addEventListener('change', mount);
   else if (MQ.addListener) MQ.addListener(mount);
